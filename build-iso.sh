@@ -8,7 +8,7 @@
 set -e
 
 OUTPUT="${OUTPUT_DIR:-/output}"
-VERSION="0.1.1-p0"
+VERSION="0.1.2-p0"
 ISO_NAME="aios-v${VERSION}"
 WORK="/build/work"
 ALPINE_MIRROR="https://dl-cdn.alpinelinux.org/alpine/v3.21"
@@ -137,12 +137,14 @@ if [ -z "$BB_STATIC" ]; then
     echo "  FATAL: busybox.static not found"
     exit 1
 fi
-cp "$BB_STATIC" "${WORK}/initramfs/busybox"
+mkdir -p "${WORK}/initramfs/bin"
+cp "$BB_STATIC" "${WORK}/initramfs/bin/busybox"
+chmod +x "${WORK}/initramfs/bin/busybox"
 echo "  busybox.static: $BB_STATIC"
 
 cat > "${WORK}/initramfs/init" << 'INITEOF'
 #!/bin/busybox sh
-# AIOS initramfs /init v0.1.1-p0 — runs as PID 1
+# AIOS initramfs /init v0.1.2-p0 — runs as PID 1
 BB=/bin/busybox
 echo "[AIOS] initramfs starting..."
 $BB mount -t proc proc /proc
@@ -246,7 +248,7 @@ if command -v grub-mkstandalone > /dev/null 2>&1; then
     cat > "${WORK}/grub-efi.cfg" << 'GRUBEOF'
 set timeout=5
 set default=0
-menuentry "AIOS v0.1.1-p0" {
+menuentry "AIOS v0.1.2-p0" {
     linux /boot/vmlinuz console=ttyS0 console=tty1 quiet loglevel=3
     initrd /boot/initramfs.img
 }
