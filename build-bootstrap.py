@@ -30,14 +30,14 @@ MODELS = {
     },
     "reviewer": {
         "name": "Granite 3.2 2B Instruct",
-        "url": "https://huggingface.co/ibm-research/granite-3.2-2b-instruct-GGUF/resolve/main/granite-3.2-2b-instruct.Q4_K_M.gguf",
-        "dest": "models/granite-3.2-2b-instruct.Q4_K_M.gguf",
+        "url": "https://huggingface.co/ibm-research/granite-3.2-2b-instruct-GGUF/resolve/main/granite-3.2-2b-instruct-Q4_K_M.gguf",
+        "dest": "models/granite-3.2-2b-instruct-Q4_K_M.gguf",
         "min_ram_mb": 8192,
     },
     "validator": {
         "name": "Gemma 3 1B Instruct",
         "url": "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf",
-        "dest": "models/gemma-3-1b-it.Q4_K_M.gguf",
+        "dest": "models/gemma-3-1b-it-Q4_K_M.gguf",
         "min_ram_mb": 4096,
     },
 }
