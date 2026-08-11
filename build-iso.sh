@@ -8,7 +8,7 @@
 set -e
 
 OUTPUT="${OUTPUT_DIR:-/output}"
-VERSION="0.1.2-p0"
+VERSION="0.1.3-p0"
 ISO_NAME="aios-v${VERSION}"
 WORK="/build/work"
 ALPINE_MIRROR="https://dl-cdn.alpinelinux.org/alpine/v3.21"
@@ -144,9 +144,10 @@ echo "  busybox.static: $BB_STATIC"
 
 cat > "${WORK}/initramfs/init" << 'INITEOF'
 #!/bin/busybox sh
-# AIOS initramfs /init v0.1.2-p0 — runs as PID 1
+# AIOS initramfs /init v0.1.3-p0 — runs as PID 1
 BB=/bin/busybox
 echo "[AIOS] initramfs starting..."
+$BB mkdir -p /proc /sys /dev /cdrom /squash
 $BB mount -t proc proc /proc
 $BB mount -t sysfs sysfs /sys
 $BB mount -t devtmpfs dev /dev
@@ -156,7 +157,6 @@ $BB sleep 1
 $BB modprobe loop 2>/dev/null || true
 $BB modprobe squashfs 2>/dev/null || true
 
-mkdir -p /cdrom /squash
 found=0
 for dev in sr0 sr1 sda sdb sdc sdd hda hdb; do
     [ -b "/dev/$dev" ] || continue
@@ -248,7 +248,7 @@ if command -v grub-mkstandalone > /dev/null 2>&1; then
     cat > "${WORK}/grub-efi.cfg" << 'GRUBEOF'
 set timeout=5
 set default=0
-menuentry "AIOS v0.1.2-p0" {
+menuentry "AIOS v0.1.3-p0" {
     linux /boot/vmlinuz console=tty1 console=ttyS0,115200 quiet loglevel=3
     initrd /boot/initramfs.img
 }
