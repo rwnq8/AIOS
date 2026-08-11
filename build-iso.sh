@@ -1,5 +1,5 @@
 #!/bin/bash
-# AIOS Alpine ISO Builder v0.1.1-p0
+# AIOS Alpine ISO Builder v0.1.2-p0
 # Builds a bootable Alpine Linux ISO with embedded AIOS bootstrap tarball.
 
 set -e
@@ -248,11 +248,31 @@ if [ -f /usr/share/syslinux/ldlinux.c32 ]; then
     cp /usr/share/syslinux/ldlinux.c32 "${WORK}/iso/isolinux/"
 fi
 
+# Build UEFI boot image (efiboot.img) via grub-mkstandalone
+mkdir -p "${WORK}/iso/isolinux"
+if command -v grub-mkstandalone > /dev/null 2>&1; then
+    echo "  Building UEFI boot image..."
+    GRUB_EFI_MODULES="normal linux iso9660 squash4 part_msdos part_gpt fat search configfile"
+    cat > "${WORK}/grub-efi.cfg" << 'GRUBEOF'
+set timeout=5
+set default=0
+menuentry "AIOS v0.1.2-p0" {
+    linux /boot/vmlinuz init=/init root=ram0 console=tty1 quiet loglevel=3
+    initrd /boot/aios.squashfs
+}
+GRUBEOF
+    grub-mkstandalone -O x86_64-efi -o "${WORK}/iso/isolinux/efiboot.img"         --modules="${GRUB_EFI_MODULES}" --themes='' --locales=''         -d /usr/lib/grub/x86_64-efi         "boot/grub/grub.cfg=${WORK}/grub-efi.cfg" 2>&1 | tail -3 || echo "  WARNING: grub-mkstandalone failed"
+    ls -la "${WORK}/iso/isolinux/efiboot.img" 2>/dev/null || echo "  WARNING: efiboot.img not created"
+else
+    echo "  WARNING: grub-mkstandalone not found — BIOS-only ISO"
+fi
+
 # Build the ISO
 OUTPUT_ISO="${OUTPUT}/${ISO_NAME}.iso"
 mkdir -p "${OUTPUT}"
 
-xorriso -as mkisofs \
+if [ -f "${WORK}/iso/isolinux/efiboot.img" ]; then
+    XORRISO_CMD="xorriso -as mkisofs \
     -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
     -c isolinux/boot.cat \
     -b isolinux/isolinux.bin \
@@ -264,7 +284,20 @@ xorriso -as mkisofs \
     -no-emul-boot \
     -isohybrid-gpt-basdat \
     -o "${OUTPUT_ISO}" \
-    "${WORK}/iso" 2>&1 || {
+    "${WORK}/iso""
+else
+    XORRISO_CMD="xorriso -as mkisofs \
+    -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
+    -c isolinux/boot.cat \
+    -b isolinux/isolinux.bin \
+    -no-emul-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
+    -o "${OUTPUT_ISO}" \
+    "${WORK}/iso""
+fi
+echo "  Running: ${XORRISO_CMD}"
+eval "${XORRISO_CMD}" 2>&1 || {
     echo "  xorriso failed, trying genisoimage..."
     genisoimage -o "${OUTPUT_ISO}" \
         -b isolinux/isolinux.bin -c isolinux/boot.cat \
