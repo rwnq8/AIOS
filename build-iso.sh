@@ -1,11 +1,14 @@
 #!/bin/bash
-# AIOS Alpine ISO Builder v0.1.2-p0
-# Builds a bootable Alpine Linux ISO with embedded AIOS bootstrap tarball.
+# AIOS Alpine ISO Builder v0.1.1-p0
+# Bootable Alpine Linux ISO with embedded AIOS bootstrap tarball.
+# Boot model: small cpio initramfs (/init) mounts aios.squashfs via loop,
+# then switch_root into the Alpine rootfs which runs /sbin/first_boot.sh.
+# Hybrid UEFI (grub-mkstandalone efiboot.img) + BIOS (isolinux).
 
 set -e
 
 OUTPUT="${OUTPUT_DIR:-/output}"
-VERSION="0.1.0-p0"
+VERSION="0.1.1-p0"
 ISO_NAME="aios-v${VERSION}"
 WORK="/build/work"
 ALPINE_MIRROR="https://dl-cdn.alpinelinux.org/alpine/v3.21"
@@ -15,15 +18,12 @@ echo " AIOS ISO BUILDER v${VERSION}"
 echo "=========================================="
 echo ""
 
-# === Stage 1: Download Alpine base ===
-echo "[1/6] Downloading Alpine base packages..."
-mkdir -p "${WORK}/apks"
-
-# Core packages for bootable USB
+# === Stage 1: Package list ===
 PACKAGES=(
     alpine-base
     busybox
     busybox-openrc
+    busybox-static
     openrc
     e2fsprogs
     e2fsprogs-extra
@@ -50,13 +50,7 @@ PACKAGES=(
     musl-dev
     cmake
 )
-
-echo "  Packages: ${#PACKAGES[@]}"
-
-# Download all packages
-for pkg in "${PACKAGES[@]}"; do
-    apk fetch --repositories-file /etc/apk/repositories --no-cache -o "${WORK}/apks/" "$pkg" 2>/dev/null || true
-done
+echo "[1/6] Package list: ${#PACKAGES[@]} packages"
 
 # === Stage 2: Create rootfs ===
 echo "[2/6] Creating root filesystem..."
@@ -73,15 +67,12 @@ REPOEOF
 
 # Install all packages into rootfs (NO silent failure — errors visible)
 apk add --root "${ROOTFS}" --initdb --no-cache "${PACKAGES[@]}"
-echo "  Rootfs packages installed: $(apk --root ${ROOTFS} info 2>/dev/null | wc -l)" 
+echo "  Rootfs packages installed: $(apk --root ${ROOTFS} info 2>/dev/null | wc -l)"
 
 # Configure rootfs
 echo "  Configuring rootfs..."
-
-# Set hostname
 echo "aios" > "${ROOTFS}/etc/hostname"
 
-# Enable networking on boot
 if [ -f "${ROOTFS}/etc/network/interfaces" ]; then
     cat > "${ROOTFS}/etc/network/interfaces" << 'EOF'
 auto lo
@@ -92,7 +83,6 @@ iface eth0 inet dhcp
 EOF
 fi
 
-# Configure init
 cat > "${ROOTFS}/etc/inittab" << 'EOF'
 ::sysinit:/sbin/openrc sysinit
 ::sysinit:/sbin/openrc boot
@@ -100,108 +90,114 @@ cat > "${ROOTFS}/etc/inittab" << 'EOF'
 ::ctrlaltdel:/sbin/reboot
 ::shutdown:/sbin/openrc shutdown
 tty1::respawn:/sbin/getty 38400 tty1
-tty2::respawn:/sbin/getty 38400 tty2
+ttyS0::respawn:/sbin/getty 38400 ttyS0
 EOF
 
-# === Stage 3: Embed AIOS bootstrap ===
-echo "[3/6] Embedding AIOS bootstrap tarball..."
-
-BOOTSTRAP_TAR="/build/aios-bootstrap.tar.gz"
-if [ ! -f "${BOOTSTRAP_TAR}" ]; then
-    echo "  WARNING: aios-bootstrap.tar.gz not found at ${BOOTSTRAP_TAR}"
-    echo "  Creating empty placeholder..."
-    mkdir -p /tmp/aios-empty
-    tar -czf "${BOOTSTRAP_TAR}" -C /tmp/aios-empty .
-fi
-
-BS_SIZE=$(du -h "${BOOTSTRAP_TAR}" | cut -f1)
-echo "  Bootstrap size: ${BS_SIZE}"
-
-# Place bootstrap in initramfs staging
-mkdir -p "${ROOTFS}/boot"
-cp "${BOOTSTRAP_TAR}" "${ROOTFS}/aios-bootstrap.tar.gz"
-
-# Copy first_boot.sh to initramfs scripts
-if [ -d "/build/aios" ]; then
-    mkdir -p "${ROOTFS}/sbin"
-    cp /build/aios/first_boot.sh "${ROOTFS}/sbin/first_boot.sh" 2>/dev/null || true
-    chmod +x "${ROOTFS}/sbin/first_boot.sh" 2>/dev/null || true
-fi
-
-# === Stage 4: Configure initramfs ===
-echo "[4/6] Configuring initramfs..."
-
-# Create initramfs init script
-cat > "${ROOTFS}/init" << 'INITEOF'
-#!/bin/sh
-# AIOS Initramfs Init v0.1.0-p0
-# This runs as PID 1 during early boot
-
-echo "[AIOS] Initramfs starting..."
-
-# Mount basic filesystems
-mount -t proc proc /proc
-mount -t sysfs sysfs /sys
-mount -t devtmpfs dev /dev
-
-echo "[AIOS] Hardware detection starting..."
-
-# Load basic kernel modules
-modprobe usb-storage 2>/dev/null || true
-modprobe sd_mod 2>/dev/null || true
-modprobe ext4 2>/dev/null || true
-
-# Find and mount the USB boot device
-echo "[AIOS] Searching for AIOS bootstrap..."
-sleep 2
-
-# Try to find the bootstrap tarball on the boot medium
-BOOTSTRAP="/aios-bootstrap.tar.gz"
-for dev in /dev/sd*; do
-    if [ -b "$dev" ]; then
-        mkdir -p /mnt/boot
-        mount "$dev" /mnt/boot 2>/dev/null || continue
-        if [ -f "/mnt/boot/aios-bootstrap.tar.gz" ]; then
-            BOOTSTRAP="/mnt/boot/aios-bootstrap.tar.gz"
-            echo "[AIOS] Found bootstrap on ${dev}"
-            break
-        fi
-        umount /mnt/boot 2>/dev/null
-    fi
-done
-
-if [ ! -f "${BOOTSTRAP}" ]; then
-    echo "[AIOS] FATAL: Bootstrap tarball not found."
-    echo "[AIOS] Dropping to emergency shell..."
-    exec /bin/sh
-fi
-
-echo "[AIOS] Extracting bootstrap..."
-mkdir -p /mnt/persist
-tar -xzf "${BOOTSTRAP}" -C /mnt/persist
-
-# Run first_boot.sh if available
-if [ -f "/mnt/persist/aios/first_boot.sh" ]; then
-    echo "[AIOS] Executing first_boot.sh..."
-    exec /bin/sh /mnt/persist/aios/first_boot.sh
-fi
-
-echo "[AIOS] No first_boot.sh found. Dropping to shell..."
-exec /bin/sh
-INITEOF
-
-chmod +x "${ROOTFS}/init"
-
-# Create minimal fstab
 cat > "${ROOTFS}/etc/fstab" << 'EOF'
 proc    /proc    proc    defaults    0 0
 sysfs   /sys     sysfs   defaults    0 0
 devtmpfs /dev    devtmpfs defaults   0 0
 EOF
 
+# === Stage 3: Embed AIOS bootstrap ===
+echo "[3/6] Embedding AIOS bootstrap tarball..."
+BOOTSTRAP_TAR="/build/aios-bootstrap.tar.gz"
+if [ ! -f "${BOOTSTRAP_TAR}" ]; then
+    echo "  WARNING: aios-bootstrap.tar.gz not found — creating empty placeholder"
+    mkdir -p /tmp/aios-empty
+    tar -czf "${BOOTSTRAP_TAR}" -C /tmp/aios-empty .
+fi
+BS_SIZE=$(du -h "${BOOTSTRAP_TAR}" | cut -f1)
+echo "  Bootstrap size: ${BS_SIZE}"
+cp "${BOOTSTRAP_TAR}" "${ROOTFS}/aios-bootstrap.tar.gz"
+
+# Copy AIOS scripts into the rootfs
+if [ -d "/build/aios" ]; then
+    mkdir -p "${ROOTFS}/sbin" "${ROOTFS}/aios"
+    cp /build/aios/first_boot.sh "${ROOTFS}/sbin/first_boot.sh" 2>/dev/null || true
+    chmod +x "${ROOTFS}/sbin/first_boot.sh" 2>/dev/null || true
+    cp /build/aios/orchestrator.py "${ROOTFS}/aios/orchestrator.py" 2>/dev/null || true
+    cp /build/aios/launch.sh "${ROOTFS}/aios/launch.sh" 2>/dev/null || true
+    chmod +x "${ROOTFS}/aios/launch.sh" 2>/dev/null || true
+fi
+
+# === Stage 4: Build cpio initramfs ===
+echo "[4/6] Building initramfs (cpio)..."
+mkdir -p "${WORK}/initramfs"
+
+# Static busybox for the initramfs (no dependencies)
+BB_STATIC=""
+for cand in "${ROOTFS}/bin/busybox.static" /bin/busybox.static /usr/bin/busybox.static; do
+    if [ -f "$cand" ]; then
+        BB_STATIC="$cand"
+        break
+    fi
+done
+if [ -z "$BB_STATIC" ]; then
+    echo "  FATAL: busybox.static not found"
+    exit 1
+fi
+cp "$BB_STATIC" "${WORK}/initramfs/busybox"
+echo "  busybox.static: $BB_STATIC"
+
+cat > "${WORK}/initramfs/init" << 'INITEOF'
+#!/bin/busybox sh
+# AIOS initramfs /init v0.1.1-p0 — runs as PID 1
+BB=/bin/busybox
+echo "[AIOS] initramfs starting..."
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sysfs /sys
+$BB mount -t devtmpfs dev /dev
+$BB sleep 1
+
+# Load loop + squashfs modules if modular
+$BB modprobe loop 2>/dev/null || true
+$BB modprobe squashfs 2>/dev/null || true
+
+mkdir -p /cdrom /squash
+found=0
+for dev in sr0 sr1 sda sdb sdc sdd hda hdb; do
+    [ -b "/dev/$dev" ] || continue
+    if $BB mount -t iso9660 -o ro "/dev/$dev" /cdrom 2>/dev/null; then
+        if [ -f /cdrom/aios.squashfs ]; then
+            echo "[AIOS] Boot medium found: /dev/$dev (ISO)"
+            found=1
+            break
+        fi
+        $BB umount /cdrom 2>/dev/null
+    fi
+done
+
+if [ $found -eq 0 ]; then
+    echo "[AIOS] FATAL: no boot medium with aios.squashfs found"
+    echo "[AIOS] Dropping to emergency shell"
+    exec $BB sh
+fi
+
+echo "[AIOS] Mounting squashfs root..."
+$BB mount -t squashfs -o loop,ro /cdrom/aios.squashfs /squash || {
+    echo "[AIOS] FATAL: squashfs mount failed"
+    exec $BB sh
+}
+
+echo "[AIOS] Pivoting to squashfs root..."
+$BB mount --move /dev /squash/dev
+$BB mount --move /proc /squash/proc
+$BB mount --move /sys /squash/sys
+
+echo "[AIOS] switch_root -> /sbin/first_boot.sh"
+exec $BB switch_root /squash /sbin/first_boot.sh
+INITEOF
+chmod +x "${WORK}/initramfs/init"
+
+# Build the cpio archive
+cd "${WORK}/initramfs"
+find . | cpio -o -H newc 2>/dev/null | gzip > "${WORK}/initramfs.img"
+INITRAMFS_SIZE=$(du -h "${WORK}/initramfs.img" | cut -f1)
+echo "  initramfs.img: ${INITRAMFS_SIZE}"
+
 # === Stage 5: Build squashfs ===
 echo "[5/6] Building squashfs image..."
-
 SQUASHFS="${WORK}/aios.squashfs"
 mksquashfs "${ROOTFS}" "${SQUASHFS}" -comp xz -b 256K -noappend
 SQUASHFS_SIZE=$(du -h "${SQUASHFS}" | cut -f1)
@@ -209,69 +205,67 @@ echo "  SquashFS size: ${SQUASHFS_SIZE}"
 
 # === Stage 6: Build ISO ===
 echo "[6/6] Building ISO..."
+ISO_DIR="${WORK}/iso"
+mkdir -p "${ISO_DIR}/boot" "${ISO_DIR}/isolinux"
 
-mkdir -p "${WORK}/iso"
-
-# Copy kernel (from rootfs linux-lts package)
-mkdir -p "${WORK}/iso"
+# Kernel
 if [ -f "${ROOTFS}/boot/vmlinuz-lts" ]; then
-    cp "${ROOTFS}/boot/vmlinuz-lts" "${WORK}/iso/vmlinuz"
-    echo "  Kernel: ${ROOTFS}/boot/vmlinuz-lts"
+    cp "${ROOTFS}/boot/vmlinuz-lts" "${ISO_DIR}/boot/vmlinuz"
+    echo "  Kernel: vmlinuz-lts"
 else
-    echo "  WARNING: vmlinuz-lts not found in rootfs — kernel may be missing!"
-    ls "${ROOTFS}/boot/" 2>/dev/null || true
+    echo "  FATAL: vmlinuz-lts not found in rootfs"
+    exit 1
 fi
 
-# Copy squashfs
-cp "${SQUASHFS}" "${WORK}/iso/aios.squashfs"
-mkdir -p "${WORK}/iso/boot"
-cp "${WORK}/iso/vmlinuz" "${WORK}/iso/boot/vmlinuz" 2>/dev/null || true
-cp "${WORK}/iso/aios.squashfs" "${WORK}/iso/boot/aios.squashfs" 2>/dev/null || true
+# Initramfs + squashfs
+cp "${WORK}/initramfs.img" "${ISO_DIR}/boot/initramfs.img"
+cp "${SQUASHFS}" "${ISO_DIR}/aios.squashfs"
 
-# Create isolinux config
-mkdir -p "${WORK}/iso/isolinux"
-cat > "${WORK}/iso/isolinux/isolinux.cfg" << 'EOF'
+# ISOLINUX (BIOS) config
+cat > "${ISO_DIR}/isolinux/isolinux.cfg" << 'EOF'
 DEFAULT aios
 LABEL aios
-    KERNEL /vmlinuz
-    APPEND root=/dev/ram0 init=/init console=tty1 quiet loglevel=3
-    INITRD /aios.squashfs
+    KERNEL /boot/vmlinuz
+    INITRD /boot/initramfs.img
+    APPEND console=ttyS0 console=tty1 quiet loglevel=3
 TIMEOUT 50
 PROMPT 1
 EOF
 
 # Copy isolinux binaries
 if [ -f /usr/share/syslinux/isolinux.bin ]; then
-    cp /usr/share/syslinux/isolinux.bin "${WORK}/iso/isolinux/"
+    cp /usr/share/syslinux/isolinux.bin "${ISO_DIR}/isolinux/"
 fi
 if [ -f /usr/share/syslinux/ldlinux.c32 ]; then
-    cp /usr/share/syslinux/ldlinux.c32 "${WORK}/iso/isolinux/"
+    cp /usr/share/syslinux/ldlinux.c32 "${ISO_DIR}/isolinux/"
 fi
 
-# Build UEFI boot image (efiboot.img) via grub-mkstandalone
-mkdir -p "${WORK}/iso/isolinux"
+# UEFI boot image via grub-mkstandalone
 if command -v grub-mkstandalone > /dev/null 2>&1; then
     echo "  Building UEFI boot image..."
-    GRUB_EFI_MODULES="normal linux iso9660 squash4 part_msdos part_gpt fat search configfile"
     cat > "${WORK}/grub-efi.cfg" << 'GRUBEOF'
 set timeout=5
 set default=0
-menuentry "AIOS v0.1.2-p0" {
-    linux /boot/vmlinuz init=/init root=ram0 console=tty1 quiet loglevel=3
-    initrd /boot/aios.squashfs
+menuentry "AIOS v0.1.1-p0" {
+    linux /boot/vmlinuz console=ttyS0 console=tty1 quiet loglevel=3
+    initrd /boot/initramfs.img
 }
 GRUBEOF
-    grub-mkstandalone -O x86_64-efi -o "${WORK}/iso/isolinux/efiboot.img"         --modules="${GRUB_EFI_MODULES}" --themes='' --locales=''         -d /usr/lib/grub/x86_64-efi         "boot/grub/grub.cfg=${WORK}/grub-efi.cfg" 2>&1 | tail -3 || echo "  WARNING: grub-mkstandalone failed"
-    ls -la "${WORK}/iso/isolinux/efiboot.img" 2>/dev/null || echo "  WARNING: efiboot.img not created"
+    grub-mkstandalone -O x86_64-efi -o "${ISO_DIR}/isolinux/efiboot.img" \
+        --modules="normal linux iso9660 squash4 loopback part_msdos part_gpt fat search configfile" \
+        --themes='' --locales='' \
+        -d /usr/lib/grub/x86_64-efi \
+        "boot/grub/grub.cfg=${WORK}/grub-efi.cfg" 2>&1 | tail -3 || echo "  WARNING: grub-mkstandalone failed"
+    ls -la "${ISO_DIR}/isolinux/efiboot.img" 2>/dev/null || echo "  WARNING: efiboot.img not created"
 else
     echo "  WARNING: grub-mkstandalone not found — BIOS-only ISO"
 fi
 
-# Build the ISO
+# Assemble ISO
 OUTPUT_ISO="${OUTPUT}/${ISO_NAME}.iso"
 mkdir -p "${OUTPUT}"
 
-if [ -f "${WORK}/iso/isolinux/efiboot.img" ]; then
+if [ -f "${ISO_DIR}/isolinux/efiboot.img" ]; then
     XORRISO_CMD="xorriso -as mkisofs \
     -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
     -c isolinux/boot.cat \
@@ -283,8 +277,8 @@ if [ -f "${WORK}/iso/isolinux/efiboot.img" ]; then
     -e isolinux/efiboot.img \
     -no-emul-boot \
     -isohybrid-gpt-basdat \
-    -o "${OUTPUT_ISO}" \
-    "${WORK}/iso""
+    -o \"${OUTPUT_ISO}\" \
+    \"${ISO_DIR}\""
 else
     XORRISO_CMD="xorriso -as mkisofs \
     -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin \
@@ -293,16 +287,14 @@ else
     -no-emul-boot \
     -boot-load-size 4 \
     -boot-info-table \
-    -o "${OUTPUT_ISO}" \
-    "${WORK}/iso""
+    -o \"${OUTPUT_ISO}\" \
+    \"${ISO_DIR}\""
 fi
+
 echo "  Running: ${XORRISO_CMD}"
 eval "${XORRISO_CMD}" 2>&1 || {
-    echo "  xorriso failed, trying genisoimage..."
-    genisoimage -o "${OUTPUT_ISO}" \
-        -b isolinux/isolinux.bin -c isolinux/boot.cat \
-        -no-emul-boot -boot-load-size 4 -boot-info-table \
-        "${WORK}/iso" 2>&1 || true
+    echo "  ISO assembly failed"
+    exit 1
 }
 
 if [ -f "${OUTPUT_ISO}" ]; then
@@ -321,10 +313,6 @@ else
     echo ""
     echo "=========================================="
     echo " ISO BUILD FAILED"
-    echo "=========================================="
-    echo "  Check the errors above. Common issues:"
-    echo "  - Missing isolinux binaries"
-    echo "  - Missing kernel (vmlinuz-lts)"
     echo "=========================================="
     exit 1
 fi
