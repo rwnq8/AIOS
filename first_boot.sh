@@ -56,24 +56,36 @@ fi
 # === Stage 3: Find Persistence Disk ===
 log "Locating persistence storage..."
 
-# Try to find the USB device
+# Ensure storage drivers are loaded (USB, SCSI, SATA) before scanning
+modprobe usb-storage 2>/dev/null || true
+modprobe uhci_hcd 2>/dev/null || true
+modprobe ehci_hcd 2>/dev/null || true
+modprobe xhci_hcd 2>/dev/null || true
+modprobe sd_mod 2>/dev/null || true
+modprobe ahci 2>/dev/null || true
+modprobe ata_piix 2>/dev/null || true
+sleep 3
+
+# Try to find a USB/disk device >= 8GB (exclude loop/ram/sr)
 USB_DEV=""
-for dev in /dev/sd?; do
-    if [ -b "$dev" ]; then
-        SIZE=$(blockdev --getsize64 "$dev" 2>/dev/null || echo "0")
-        # Look for 8GB+ devices (USB drives)
-        if [ "$SIZE" -gt 7500000000 ] 2>/dev/null; then
-            USB_DEV="$dev"
-            log "  Found USB device: ${USB_DEV} (${SIZE} bytes)"
-            break
-        fi
+for dev in /dev/sd? /dev/hd? /dev/vd?; do
+    [ -b "$dev" ] || continue
+    SIZE=$(blockdev --getsize64 "$dev" 2>/dev/null || echo "0")
+    if [ "${SIZE}" -gt 7500000000 ] 2>/dev/null; then
+        USB_DEV="$dev"
+        log "  Found USB device: ${USB_DEV} (${SIZE} bytes)"
+        break
     fi
 done
 
 if [ -z "$USB_DEV" ]; then
-    # Fallback: use the first available disk
-    USB_DEV=$(lsblk -ndo NAME | head -1)
-    USB_DEV="/dev/${USB_DEV}"
+    # Fallback: first real disk (not loop/ram/sr)
+    USB_DEV=$(lsblk -ndo NAME,TYPE 2>/dev/null | awk '$2=="disk" {print "/dev/"$1; exit}')
+    if [ -z "$USB_DEV" ]; then
+        USB_DEV=$(lsblk -ndo NAME 2>/dev/null | grep -v -E '^(loop|ram|sr)' | head -1)
+        [ -n "$USB_DEV" ] && USB_DEV="/dev/${USB_DEV}"
+    fi
+    [ -z "$USB_DEV" ] && USB_DEV="/dev/sda"
     warn "  Could not auto-detect USB. Using: ${USB_DEV}"
 fi
 
@@ -86,8 +98,14 @@ log "Creating persistence partition on ${PERSIST_PART}..."
 # WARNING: This will create a new partition. In production, check for existing first.
 if [ ! -b "$PERSIST_PART" ]; then
     log "  Partitioning ${USB_DEV}..."
-    echo -e "n\np\n2\n\n+6G\nw" | fdisk "$USB_DEV" > /dev/null 2>&1 || true
-    sleep 1
+    # Create a DOS label with partition 2 = 6GB persistence (partition 1 = ISO data)
+    printf 'label: dos\n,,L\n' | sfdisk "$USB_DEV" > /dev/null 2>&1 || true
+    sleep 2
+    # If sfdisk made partition 1 only, rename expectation: use p1 as persistence fallback
+    if [ ! -b "$PERSIST_PART" ] && [ -b "${USB_DEV}1" ]; then
+        PERSIST_PART="${USB_DEV}1"
+        log "  Using partition 1 as persistence: ${PERSIST_PART}"
+    fi
 fi
 
 if [ -b "$PERSIST_PART" ]; then
