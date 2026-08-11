@@ -177,8 +177,22 @@ log "========================================="
 log "Bootstrap complete. Launching AIOS orchestrator..."
 log ""
 
-# Switch to persistence and launch
-exec chroot "$PERSIST_MOUNT" /aios/launch.sh || {
+# Launch from the squashfs root (python3 lives in rootfs; the tarball has
+# no runtime/ dir, so chroot into persistence would lose python3).
+# If a full runtime IS present in persistence, prefer the chroot path.
+if [ -x "${PERSIST_MOUNT}/aios/launch.sh" ] && [ -x "${PERSIST_MOUNT}/runtime/python3" ]; then
+    exec chroot "$PERSIST_MOUNT" /aios/launch.sh || {
+        err "Failed to launch orchestrator in chroot."
+        err "Dropping to emergency shell..."
+        exec /bin/sh
+    }
+fi
+
+# Default: run from squashfs root with env pointing at persistence
+export AIOS_ROOT="${PERSIST_MOUNT}/aios"
+export AIOS_MODELS="${PERSIST_MOUNT}/models"
+export PYTHONUNBUFFERED=1
+exec python3 "${PERSIST_MOUNT}/aios/orchestrator.py" || {
     err "Failed to launch orchestrator."
     err "Dropping to emergency shell..."
     exec /bin/sh
