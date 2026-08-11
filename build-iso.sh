@@ -22,7 +22,6 @@ mkdir -p "${WORK}/apks"
 # Core packages for bootable USB
 PACKAGES=(
     alpine-base
-    alpine-mkinitfs
     busybox
     busybox-openrc
     openrc
