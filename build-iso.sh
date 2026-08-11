@@ -229,7 +229,7 @@ DEFAULT aios
 LABEL aios
     KERNEL /boot/vmlinuz
     INITRD /boot/initramfs.img
-    APPEND console=ttyS0 console=tty1 quiet loglevel=3
+    APPEND console=tty1 console=ttyS0,115200 quiet loglevel=3
 TIMEOUT 50
 PROMPT 1
 EOF
@@ -249,7 +249,7 @@ if command -v grub-mkstandalone > /dev/null 2>&1; then
 set timeout=5
 set default=0
 menuentry "AIOS v0.1.2-p0" {
-    linux /boot/vmlinuz console=ttyS0 console=tty1 quiet loglevel=3
+    linux /boot/vmlinuz console=tty1 console=ttyS0,115200 quiet loglevel=3
     initrd /boot/initramfs.img
 }
 GRUBEOF
