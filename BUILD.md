@@ -84,3 +84,20 @@ qemu-system-x86_64 -m 4096 -cdrom output/aios-v0.1.0-p0.iso \
     -drive file=/dev/sdX,format=raw,if=none,id=usb-drive \
     -device usb-storage,drive=usb-drive
 ```
+
+## Built Artifact (2026-08-11, verified)
+
+`aios-v0.1.0-p0.iso` — **8.11 GB** — built successfully in WSL2 Alpine 3.21.3.
+- **SHA256**: `82d795b99b031b22feea471b20f6894c7e5a583d081db5a6e7c0a3bf8176b044`
+- **Boot**: Hybrid — isolinux (BIOS) + grub-mkstandalone efiboot.img (UEFI), isohybrid MBR+GPT
+- **Contents**: Alpine rootfs (248 packages, 971 MiB) + `aios-bootstrap.tar.gz` (3.0 GB: 3 GGUF models + scripts + config)
+- **Write to USB**: `dd if=aios-v0.1.0-p0.iso of=/dev/sdX bs=4M status=progress`
+- **First boot**: initramfs `/init` extracts bootstrap → `first_boot.sh` (HW detect → model select → persistence) → `launch.sh` → `orchestrator.py`
+
+### Build fix cycle (3 iterations, all committed)
+
+| Commit | Fix |
+|:-------|:----|
+| `8cfba48` | Stage 2 apk `--root` needed repos+keys INSIDE rootfs; removed silent `2>/dev/null` |
+| `614acf3` | Removed phantom `alpine-mkinitfs` package (real: `mkinitfs`) |
+| `4cbd89b` | Built UEFI `efiboot.img` via `grub-mkstandalone` (xorriso failed on missing EFI image) |
