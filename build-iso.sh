@@ -1,5 +1,5 @@
 #!/bin/bash
-# AIOS Alpine ISO Builder v0.1.0-p0
+# AIOS Alpine ISO Builder v0.1.1-p0
 # Builds a bootable Alpine Linux ISO with embedded AIOS bootstrap tarball.
 
 set -e
@@ -62,16 +62,19 @@ done
 # === Stage 2: Create rootfs ===
 echo "[2/6] Creating root filesystem..."
 mkdir -p "${WORK}/rootfs"
-
-# Use Alpine's mkrootfs or manual construction
 ROOTFS="${WORK}/rootfs"
 
-apk add --root "${ROOTFS}" --initdb --repositories-file /etc/apk/repositories "${PACKAGES[@]}" 2>/dev/null || {
-    echo "  apk add failed, trying individual package install..."
-    for pkg in "${PACKAGES[@]}"; do
-        apk add --root "${ROOTFS}" --initdb --repositories-file /etc/apk/repositories "$pkg" 2>/dev/null || true
-    done
-}
+# Configure apk INSIDE the rootfs (required for --root installs)
+mkdir -p "${ROOTFS}/etc/apk/keys"
+cp -r /etc/apk/keys/* "${ROOTFS}/etc/apk/keys/" 2>/dev/null || true
+cat > "${ROOTFS}/etc/apk/repositories" << 'REPOEOF'
+https://dl-cdn.alpinelinux.org/alpine/v3.21/main
+https://dl-cdn.alpinelinux.org/alpine/v3.21/community
+REPOEOF
+
+# Install all packages into rootfs (NO silent failure — errors visible)
+apk add --root "${ROOTFS}" --initdb --no-cache "${PACKAGES[@]}"
+echo "  Rootfs packages installed: $(apk --root ${ROOTFS} info 2>/dev/null | wc -l)" 
 
 # Configure rootfs
 echo "  Configuring rootfs..."
@@ -121,8 +124,9 @@ cp "${BOOTSTRAP_TAR}" "${ROOTFS}/aios-bootstrap.tar.gz"
 
 # Copy first_boot.sh to initramfs scripts
 if [ -d "/build/aios" ]; then
+    mkdir -p "${ROOTFS}/sbin"
     cp /build/aios/first_boot.sh "${ROOTFS}/sbin/first_boot.sh" 2>/dev/null || true
-    chmod +x "${ROOTFS}/sbin/first_boot.sh"
+    chmod +x "${ROOTFS}/sbin/first_boot.sh" 2>/dev/null || true
 fi
 
 # === Stage 4: Configure initramfs ===
@@ -209,14 +213,21 @@ echo "[6/6] Building ISO..."
 
 mkdir -p "${WORK}/iso"
 
-# Copy kernel
-cp "${ROOTFS}/boot/vmlinuz-lts" "${WORK}/iso/vmlinuz" 2>/dev/null || {
-    # Fallback: try to find kernel in standard location
-    cp /boot/vmlinuz-lts "${WORK}/iso/vmlinuz" 2>/dev/null || true
-}
+# Copy kernel (from rootfs linux-lts package)
+mkdir -p "${WORK}/iso"
+if [ -f "${ROOTFS}/boot/vmlinuz-lts" ]; then
+    cp "${ROOTFS}/boot/vmlinuz-lts" "${WORK}/iso/vmlinuz"
+    echo "  Kernel: ${ROOTFS}/boot/vmlinuz-lts"
+else
+    echo "  WARNING: vmlinuz-lts not found in rootfs — kernel may be missing!"
+    ls "${ROOTFS}/boot/" 2>/dev/null || true
+fi
 
 # Copy squashfs
 cp "${SQUASHFS}" "${WORK}/iso/aios.squashfs"
+mkdir -p "${WORK}/iso/boot"
+cp "${WORK}/iso/vmlinuz" "${WORK}/iso/boot/vmlinuz" 2>/dev/null || true
+cp "${WORK}/iso/aios.squashfs" "${WORK}/iso/boot/aios.squashfs" 2>/dev/null || true
 
 # Create isolinux config
 mkdir -p "${WORK}/iso/isolinux"
