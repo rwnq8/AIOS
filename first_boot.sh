@@ -95,7 +95,8 @@ if [ -b "$PERSIST_PART" ]; then
     mkfs.ext4 -F "$PERSIST_PART" > /dev/null 2>&1 || warn "  Format may have failed (partition already formatted?)"
 else
     err "  Failed to create persistence partition. Cannot continue."
-    exit 1
+    err "  Dropping to emergency shell (PID 1 must not exit)..."
+    exec /bin/sh
 fi
 
 # === Stage 5: Mount Persistence ===
@@ -103,7 +104,8 @@ log "Mounting persistence at ${PERSIST_MOUNT}..."
 mkdir -p "$PERSIST_MOUNT"
 mount "$PERSIST_PART" "$PERSIST_MOUNT" || {
     err "  Failed to mount persistence partition."
-    exit 1
+    err "  Dropping to emergency shell..."
+    exec /bin/sh
 }
 
 # === Stage 6: Extract Bootstrap Tarball ===
@@ -113,12 +115,14 @@ if [ -f "$BOOTSTRAP_TAR" ]; then
     log "Extracting AIOS bootstrap to persistence..."
     tar -xzf "$BOOTSTRAP_TAR" -C "$PERSIST_MOUNT" || {
         err "  Failed to extract bootstrap. USB image may be corrupted."
-        exit 1
+        err "  Dropping to emergency shell..."
+        exec /bin/sh
     }
 else
     err "  Bootstrap tarball not found at ${BOOTSTRAP_TAR}."
     err "  The USB image is incomplete. Please reflash."
-    exit 1
+    err "  Dropping to emergency shell..."
+    exec /bin/sh
 fi
 
 # === Stage 7: Write Runtime Config ===
