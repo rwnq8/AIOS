@@ -5,6 +5,9 @@
 
 set -e
 
+# PID 1 must NEVER exit - any unexpected failure drops to emergency shell
+trap 'err "Fatal error at line $LINENO. Dropping to emergency shell..."; exec /bin/sh' ERR
+
 # === Color output ===
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -16,6 +19,10 @@ warn() { echo -e "${YELLOW}[AIOS]${NC} $1"; }
 err()  { echo -e "${RED}[AIOS]${NC} $1"; }
 
 log "AIOS Bootstrap v0.1.0-p0 starting..."
+log "========================================="
+
+# Root is read-only squashfs - mount writable tmpfs for scratch
+mount -t tmpfs tmpfs /tmp 2>/dev/null || true
 log "========================================="
 
 # === Stage 1: Hardware Detection ===

@@ -111,6 +111,11 @@ BS_SIZE=$(du -h "${BOOTSTRAP_TAR}" | cut -f1)
 echo "  Bootstrap size: ${BS_SIZE}"
 cp "${BOOTSTRAP_TAR}" "${ROOTFS}/aios-bootstrap.tar.gz"
 
+# Pre-create persistence mountpoint (root is RO squashfs after switch_root;
+# mountpoint MUST exist in the squashfs or mkdir fails with EROFS)
+mkdir -p "${ROOTFS}/mnt/persist"
+echo "  Persistence mountpoint: ${ROOTFS}/mnt/persist"
+
 # Copy AIOS scripts into the rootfs
 if [ -d "/build/aios" ]; then
     mkdir -p "${ROOTFS}/sbin" "${ROOTFS}/aios"
