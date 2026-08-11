@@ -42,12 +42,12 @@ The initramfs contains a minimal Alpine Linux root filesystem with:
 2. **Model Selection** (based on RAM)
    ```bash
    if [ $TOTAL_RAM -lt 4096 ]; then
-       MODEL="gemma-3-1b-q4"      # 815MB, works on 4GB
+       MODEL="gemma-3-1b-it-Q4_K_M"      # 806MB, works on 4GB
    elif [ $TOTAL_RAM -lt 8192 ]; then
-       MODEL="deepseek-coder-1.3b-q4"  # 800MB, needs 4-6GB
+       MODEL="deepseek-coder-1.3b-instruct.Q4_K_M"  # 874MB, needs 4-6GB
    else
-       MODEL="deepseek-coder-1.3b-q4"  # Primary
-       REVIEWER="granite-3.2-2b-q4"    # Reviewer if RAM allows
+       MODEL="deepseek-coder-1.3b-instruct.Q4_K_M"  # Primary
+       REVIEWER="granite-3.2-2b-instruct-Q4_K_M"    # Reviewer if RAM allows
    fi
    ```
 
@@ -70,9 +70,9 @@ The Python orchestrator is the "brain" of AIOS. It:
 ├── boot/
 │   └── vmlinuz-lts          # Kernel
 ├── models/
-│   ├── deepseek-coder-1.3b-q4_k_m.gguf
-│   ├── granite-3.2-2b-q4_k_m.gguf
-│   └── ailo-152m-q4_0.gguf
+│   ├── deepseek-coder-1.3b-instruct.Q4_K_M.gguf
+│   ├── granite-3.2-2b-instruct-Q4_K_M.gguf
+│   └── gemma-3-1b-it-Q4_K_M.gguf
 ├── runtime/
 │   ├── llama.cpp/
 │   │   └── llama-cli        # llama.cpp executable

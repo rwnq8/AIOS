@@ -46,7 +46,7 @@ A bootable USB drive that, when inserted into any basic laptop, autonomously:
 │  llama.cpp (CPU-optimized)                              │
 │  Primary: DeepSeek-Coder 1.3B GGUF (Q4_K_M)            │
 │  Reviewer: Granite-3.2-2B or TinyLlama                  │
-│  Validator: AILO-152M or Gemma-3-1B                     │
+│  Validator: Gemma-3-1B (806MB)                    │
 ├─────────────────────────────────────────────────────────┤
 │            LAYER 1: BOOTABLE FOUNDATION                 │
 │  Alpine Linux (~5MB) | GRUB | initramfs                 │
@@ -64,7 +64,7 @@ A bootable USB drive that, when inserted into any basic laptop, autonomously:
 | LLM Runtime | llama.cpp | CPU-optimized, GGUF support |
 | Primary Model | DeepSeek-Coder 1.3B GGUF | Best code quality vs. size |
 | Critic Model | Granite-3.2-2B | Small but capable code reviewer |
-| Validator | AILO-152M | 80MB, runs on anything |
+| Validator | Gemma 3 1B | 806MB, syntax/constraint checker |
 | Orchestrator | Python 3.11+ | Flexible, widespread |
 | Consensus | Custom Python module | Lightweight, no external deps |
 | Build System | Make + Python | Simple, self-contained |
@@ -82,7 +82,7 @@ A bootable USB drive that, when inserted into any basic laptop, autonomously:
 
 | Model | Size (Q4) | RAM Usage | Tokens/sec | Use |
 |:------|:----------|:----------|:-----------|:----|
-| AILO-152M | ~80MB | 200MB | 80-100 | Tiny validator |
+| Gemma 3 1B | ~806MB | 1.2GB | 40-60 | Tiny validator |
 | Gemma 3 1B | ~815MB | 1.2GB | 40-60 | Fallback primary |
 | DeepSeek-Coder 1.3B | ~800MB | 1.5GB | 30-50 | Primary P0-P2 |
 | Granite-3.2-2B | ~1.2GB | 2GB | 20-35 | Reviewer |
@@ -96,7 +96,7 @@ A bootable USB drive that, when inserted into any basic laptop, autonomously:
 | llama.cpp + runtime | ~100MB |
 | DeepSeek-Coder 1.3B GGUF | ~800MB |
 | Granite-3.2-2B GGUF | ~1.2GB |
-| AILO-152M GGUF | ~80MB |
+| Gemma 3 1B GGUF | ~806MB |
 | Python + orchestrator | ~200MB |
 | Persistence / workspace | 2GB+ |
 | **Total** | **~4.9GB** |

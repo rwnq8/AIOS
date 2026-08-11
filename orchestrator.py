@@ -129,7 +129,7 @@ class Orchestrator:
               f"{self.config.get('HARDWARE_RAM_MB', '?')} MB RAM")
 
         # Load primary model
-        primary_model_name = self.config.get("MODEL_PRIMARY", "gemma-3-1b-q4")
+        primary_model_name = self.config.get("MODEL_PRIMARY", "gemma-3-1b-it-Q4_K_M")
         primary_path = MODELS_DIR / f"{primary_model_name}.gguf"
 
         if primary_path.exists():

@@ -32,25 +32,25 @@ log "  CPU model:  ${CPU_MODEL}"
 # === Stage 2: Model Selection ===
 log "Selecting AI model based on available RAM..."
 
-MODEL="gemma-3-1b-q4"       # Default: smallest fallback
+MODEL="gemma-3-1b-it-Q4_K_M"       # Default: smallest fallback
 REVIEWER_MODEL=""            # No reviewer by default
-VALIDATOR_MODEL="ailo-152m-q4"  # Always include tiny validator
+VALIDATOR_MODEL="gemma-3-1b-it-Q4_K_M"  # Validator (only on RAM-constrained systems, same model reused)
 
 if [ "$TOTAL_RAM" -ge 4096 ]; then
-    MODEL="deepseek-coder-1.3b-q4_k_m"
-    log "  Selected PRIMARY: deepseek-coder-1.3b (4GB+ RAM)"
+    MODEL="deepseek-coder-1.3b-instruct.Q4_K_M"
+    log "  Selected PRIMARY: deepseek-coder-1.3b-instruct.Q4_K_M (4GB+ RAM)"
 elif [ "$TOTAL_RAM" -ge 2048 ]; then
-    MODEL="gemma-3-1b-q4"
-    log "  Selected PRIMARY: gemma-3-1b (2-4GB RAM)"
+    MODEL="gemma-3-1b-it-Q4_K_M"
+    log "  Selected PRIMARY: gemma-3-1b-it-Q4_K_M (2-4GB RAM)"
 else
-    MODEL="ailo-152m-q4"
+    MODEL="gemma-3-1b-it-Q4_K_M"
     VALIDATOR_MODEL=""
-    warn "  Low RAM detected (< 2GB). Using ultra-light model. Expect slow responses."
+    warn "  Low RAM detected (< 2GB). Using light model. Expect slow responses."
 fi
 
 if [ "$TOTAL_RAM" -ge 8192 ]; then
-    REVIEWER_MODEL="granite-3.2-2b-q4_k_m"
-    log "  Selected REVIEWER: granite-3.2-2b (8GB+ RAM)"
+    REVIEWER_MODEL="granite-3.2-2b-instruct-Q4_K_M"
+    log "  Selected REVIEWER: granite-3.2-2b-instruct-Q4_K_M (8GB+ RAM)"
 fi
 
 # === Stage 3: Find Persistence Disk ===
@@ -149,7 +149,7 @@ log "Bootstrap complete. Launching AIOS orchestrator..."
 log ""
 
 # Switch to persistence and launch
-exec chroot "$PERSIST_MOUNT" /aios/bin/launch.sh || {
+exec chroot "$PERSIST_MOUNT" /aios/launch.sh || {
     err "Failed to launch orchestrator."
     err "Dropping to emergency shell..."
     exec /bin/sh
