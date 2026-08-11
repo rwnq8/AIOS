@@ -14,8 +14,11 @@
 git clone https://github.com/rwnq8/AIOS.git
 cd AIOS
 
-# 2. Build the bootstrap tarball (downloads ~2GB of models)
+# 2. Build the bootstrap tarball (downloads ~3.2GB of models)
 python build-bootstrap.py
+
+# 2b. If you already have the models (resume path), assemble the tarball directly:
+python build-bootstrap.py --model-only   # download only, then run the tar assembly
 
 # 3. Build the ISO (requires Docker)
 docker build -t aios-builder .
@@ -41,12 +44,31 @@ sudo dd if=output/aios-v0.1.0-p0.iso of=/dev/sdX bs=4M status=progress
 | `Dockerfile` | Docker build environment for ISO creation |
 | `build-bootstrap.py` | Downloads models and builds bootstrap tarball |
 
-## Model Selection
+## Model Selection (verified sizes — 2026-08-11)
 
 | RAM | Primary | Reviewer | Validator | Total Size |
 |:----|:--------|:---------|:----------|:-----------|
-| 4GB | deepseek-coder-1.3b Q4_K_M (~800MB) | — | gemma-3-1b Q4_K_M (~500MB) | ~1.3GB |
-| 8GB+ | deepseek-coder-1.3b Q4_K_M (~800MB) | granite-3.2-2b Q4_K_M (~1.2GB) | gemma-3-1b Q4_K_M (~500MB) | ~2.5GB |
+| 4GB | deepseek-coder-1.3b Q4_K_M (874MB) | — | gemma-3-1b Q4_K_M (806MB) | ~1.7GB |
+| 8GB+ | deepseek-coder-1.3b Q4_K_M (874MB) | granite-3.2-2b Q4_K_M (1545MB) | gemma-3-1b Q4_K_M (806MB) | ~3.2GB |
+
+**Verified SHA256 (2026-08-11):**
+```
+04cebb6fafa40ae628cf6bfeb76032ec792852f54020c559ad0a56b9f2839118  models/deepseek-coder-1.3b-instruct.Q4_K_M.gguf
+8ccc5cd1f1b3602548715ae25a66ed73fd5dc68a210412eea643eb20eb75a135  models/gemma-3-1b-it-Q4_K_M.gguf
+9bc086149f093169fb8e3e7517cd31752bfd9d70e0e7bb3ab351c0a5386cf8c9  models/granite-3.2-2b-instruct-Q4_K_M.gguf
+```
+
+**Filename gotcha:** HuggingFace GGUF repos use HYPHEN in quant names
+(`granite-3.2-2b-instruct-Q4_K_M.gguf`), NOT dots. A dot variant 404s.
+
+## Bootstrap Tarball
+
+`aios-bootstrap.tar.gz` (~3.1 GB gzip) — the artifact embedded in the initramfs:
+- `models/` — 3 GGUF models
+- `aios/` — first_boot.sh (0755), orchestrator.py, launch.sh (0755)
+- `etc/aios.conf` — runtime config placeholder
+- `checksums.sha256` — SHA256 of every model
+- `MANIFEST.txt` — build metadata
 
 ## Testing
 
