@@ -138,8 +138,8 @@ class Orchestrator:
                 self.agents["primary"] = Agent("primary", llm, "code_generator")
                 print(f"[AIOS] Primary agent loaded: {primary_model_name}")
         else:
-            print(f"[ERROR] Primary model not found: {primary_path}")
-            return False
+            print(f"[WARN] Primary model not found: {primary_path}")
+            print(f"[WARN] Starting degraded console (no agents) — model must be placed at {MODELS_DIR}")
 
         # Load reviewer model (if available)
         reviewer_model_name = self.config.get("MODEL_REVIEWER", "")
@@ -235,9 +235,14 @@ def main():
 
     if not orch.initialize():
         print("[FATAL] Orchestrator failed to initialize.")
-        sys.exit(1)
+        print("[AIOS] Dropping to emergency shell (PID 1 must not exit)...")
+        os.execv("/bin/sh", ["/bin/sh"])
 
     orch.run_console()
+
+    # run_console only returns on exit/EOF — PID 1 must not die
+    print("[AIOS] Console closed. Dropping to emergency shell...")
+    os.execv("/bin/sh", ["/bin/sh"])
 
 
 if __name__ == "__main__":
