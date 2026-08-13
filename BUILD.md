@@ -133,3 +133,29 @@ The min-tarball test ISO (5.8 KB bootstrap) proves the chain fast; the productio
 - QEMU: `qemu-system-x86_64 -accel tcg -smp 4 -m 2048 -cdrom <iso> -usb -drive file=test-usb.img ... -serial file:`
 - 16 GB virtual USB disk (`test-usb.img`) simulates the persistence target
 - Serial console captured via `console=tty1 console=ttyS0,115200` (ttyS0 last)
+
+## Phase 1 — llama.cpp runtime (2026-08-13)
+
+The orchestrator's `LlamaCPP.load()` checks `runtime/llama.cpp/llama-cli` under `AIOS_ROOT`.
+Phase 1 compiles llama.cpp and rebuilds the bootstrap tarball with that runtime.
+
+**Build status:** ✅ `llama-cli` compiled (llama.cpp v0.1.0-dev, commit `1d2869c`) and the
+**runtime tarball rebuilt**: `aios-bootstrap-runtime.tar.gz` (3.157 GB) now contains
+`runtime/llama.cpp/llama-cli` (60 KB, exec bit set).
+
+**Script:** `scripts/build-llama.sh` — run inside the WSL2 Alpine build distro
+(`wsl -d Alpine -e sh scripts/build-llama.sh` via `/mnt/c/...`).
+
+**Three gotchas discovered (all encoded in the script):**
+
+| Gotcha | Detail |
+|:-------|:-------|
+| Target renamed | `llama-cli` target no longer exists — the unified CLI is **`llama-app`** (binary lands at `build/bin/llama`) |
+| Impl libraries | `llama-app` links `llama-server-impl` + `llama-cli-impl` → cmake needs **`-DLLAMA_BUILD_SERVER=ON -DLLAMA_BUILD_CLI=ON`** (with `-DLLAMA_BUILD_EXAMPLES=ON`) |
+| Alpine header | `common/arg.cpp` includes `<linux/limits.h>` → **`apk add linux-headers`** required |
+
+**Remaining Phase 1 steps (boot-test gate):**
+
+1. Swap `aios-bootstrap-runtime.tar.gz` into the rootfs (replace `/build/work/rootfs/aios-bootstrap.tar.gz`)
+2. `mksquashfs` the rootfs → update the test ISO (xorriso `-update`)
+3. QEMU boot test → expect **`[AIOS] Primary agent loaded: deepseek-coder-1.3b`** and a real model response in-guest (the v14 run reached `[AIOS] >` with 0 agents; llama-cli presence flips `LlamaCPP.load()` from False to True)
