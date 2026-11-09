@@ -3,6 +3,11 @@
 A bootable USB drive that autonomously builds an AI-native operating system
 from a lightweight Linux base. **Zero user knowledge required.**
 
+> Part of the autonomous AI systems research of [Rowan Brad Quni-Gudzinas](https://rwnq8.github.io),
+> a systems researcher. AIOS is a design experiment: how far can a local, offline AI system take
+> itself from bare hardware to a working environment, and which safety gates (ensemble review,
+> "AI proposes, never executes unilaterally") keep that autonomy accountable?
+
 ## What This Is
 
 AIOS is a moonshot project to create a fully autonomous OS bootstrap process:
